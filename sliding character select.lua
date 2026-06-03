@@ -1,41 +1,230 @@
-newGrid = {}
-currentColumn = 1
-totalRows = 1
-newGrid[1] = {}
-currentRow = {0, 0}
-shownTopRow = {1, 1}
-local cursorActive = {}
+
+topLine = 0
+slideTimeStart = 12
+slideTimeSide = {slideTimeStart, slideTimeStart}
+slideDirection = {1,1}
 controllingPlayer = 1
-multiplayer = true
-swapOccured = false
-remainingTime = {0, 0}
-slideDir = {0, 0}
-teammate = {1, 2}
-
-if motif.select_info['cell_slide'] == nil then
-	motif.select_info['cell_slide'] = 1
+--;===========================================================
+--; SELECT SCREEN
+--;===========================================================
+function start.updateDrawList()
+	local drawList = {}
+	
+	return drawList
 end
+function start.newUpdateDrawList()
+	local drawList = {}
+	--if main.cpuSide[2] == true then
+	if true then-- TODO: Add functionality for 2 player select screens.
+		for row = 1, motif.select_info.rows do
+			for col = 1, motif.select_info.columns do
+				local cellIndex = ((row - 1 + topLine) % #start.t_grid) * motif.select_info.columns + col
+				local t = start.t_grid[row][col]
+				--local t = start.t_grid[((row + topLine - 1) % #start.t_grid) + 1][col]
+				local c = (col - 1) * ((slideTimeSide[1] / slideTimeStart) * col)
+				local r = row - 1
+				--t.y = ((slideTimeSide[1] / slideTimeStart) * (100)) + start.t_grid[row][col].y
+				if t.skip ~= 1 then
+					local charData = start.f_selGrid(cellIndex)
+					local function getTransforms(base)
+						return {
+							facing      = getCellFacing(base.facing, c, r),
+							scale       = getCellTransform(c, r, "scale", base.scale),
+							xshear      = getCellTransform(c, r, "xshear", base.xshear),
+							angle       = getCellTransform(c, r, "angle", base.angle),
+							xangle      = getCellTransform(c, r, "xangle", base.xangle),
+							yangle      = getCellTransform(c, r, "yangle", base.yangle),
+							projection  = getCellTransform(c, r, "projection", base.projection),
+							focallength = getCellTransform(c, r, "focallength", base.focallength)
+						}
+					end
 
+					if (charData and charData.char ~= nil and (charData.hidden == 0 or charData.hidden == 3)) or motif.select_info.showemptyboxes then
+						local item = getTransforms(motif.select_info.cell.bg)
+						item.anim = motif.select_info.cell.bg.AnimData
+						item.x = motif.select_info.pos[1] + t.x
+						item.y = motif.select_info.pos[2] + t.y + (slideDirection[1] * (slideTimeSide[1] / slideTimeStart) * motif.select_info.cell.spacing[2])
+						table.insert(drawList, item)
+					end
 
-for i = 1, #main.t_selGrid do
-	start.t_grid[totalRows][currentColumn] = start.f_selGrid(i)
-	start.t_grid[totalRows][currentColumn].x = (currentColumn - 1) * (motif.select_info['cell_spacing'][1] + motif.select_info['cell_size'][1])
-	start.t_grid[totalRows][currentColumn].y = (totalRows - 1) * (motif.select_info['cell_spacing'][2] + motif.select_info['cell_size'][2])
-	if currentColumn >= motif.select_info.columns then
-		totalRows = totalRows + 1
-		if start.t_grid[totalRows] == nil then
-			start.t_grid[totalRows] = {}
+					if charData and (charData.char == 'randomselect' or charData.hidden == 3) then
+						local item = getTransforms(motif.select_info.cell.random)
+						item.anim = motif.select_info.cell.random.AnimData
+						item.x = motif.select_info.pos[1] + t.x + motif.select_info.portrait.offset[1]
+						item.y = motif.select_info.pos[2] + t.y + motif.select_info.portrait.offset[2] +(slideDirection[1] * (slideTimeSide[1] / slideTimeStart) * motif.select_info.cell.spacing[2])
+						table.insert(drawList, item)
+					end
+
+					if charData and charData.char_ref ~= nil and charData.hidden == 0 then
+						local item = getTransforms(motif.select_info.portrait)
+						item.anim = charData.cell_data
+						item.x = motif.select_info.pos[1] + t.x + motif.select_info.portrait.offset[1]
+						item.y = motif.select_info.pos[2] + t.y + motif.select_info.portrait.offset[2] + (slideDirection[1] * (slideTimeSide[1] / slideTimeStart) * motif.select_info.cell.spacing[2])
+						-- apply cell scale override while preserving portrait resolution factor
+						if item.scale ~= nil then
+							local charInfo = main.t_selChars[charData.char_ref + 1]
+							if charInfo then
+								local portraitScale = charInfo.portraitscale or 1
+								local charLocalcoord = charInfo.localcoord or motif.info.localcoord[1]
+								-- recompute resolution compensation factor
+								local resFix = portraitScale * motif.info.localcoord[1] / charLocalcoord
+								item.scale = {
+									item.scale[1] * resFix,
+									item.scale[2] * resFix
+								}
+							end
+						end
+						table.insert(drawList, item)
+					end
+				end
+			end
 		end
-		currentColumn = 1
-	else
-		currentColumn = currentColumn + 1
 	end
+	return drawList
 end
 
-for i = 1, motif.select_info.columns do
-	if start.t_grid[#start.t_grid][i] == nil then
-		table.insert(start.t_grid[#start.t_grid], {char = "", char_ref = 0, hidden = 2, cell = 0})
+hook.add("start.f_selectScreen", "selectScreenDecider", function()
+	local function updateForNewPlayer()
+		topLine = start.c[controllingPlayer].selY
+		newDrawList = start.newUpdateDrawList()
 	end
+	if newDrawList == nil then
+		newDrawList = {}
+	end
+	if start.p[1].teamEnd == false then
+		topLine = start.c[1].selY or 0
+		newDrawList = start.newUpdateDrawList()
+	end
+	
+	if false then --TODO: Split Select Screen
+		
+	else
+		if start.p[1].t_selected[1] == nil and controllingPlayer ~= 1 then
+			controllingPlayer = 1
+			updateForNewPlayer()
+		end
+		
+		if main.coop then
+			if main.cpuSide[2] == false then
+
+				if start.p[1].t_selected[1] ~= nil then
+					if start.p[2].t_selected[1] ~= nil then
+						if start.p[1].t_selected[2] ~= nil then
+							if controllingPlayer ~= 4 then
+								controllingPlayer = 4
+								updateForNewPlayer()
+							end
+						else
+							if controllingPlayer ~= 3 then
+								controllingPlayer = 3
+								updateForNewPlayer()
+							end
+						end
+					else
+						if controllingPlayer ~= 2 then
+							controllingPlayer = 2
+							updateForNewPlayer()
+						end
+					end
+					
+				end
+				
+			else
+			
+				for c, v in pairs(start.p[1].t_selected) do
+					if c == controllingPlayer then
+						controllingPlayer = c + 1
+						updateForNewPlayer()
+					end
+				end
+			
+			end
+			
+			
+		else
+			if controllingPlayer == 1 and start.p[1].selEnd == true then
+				if main.cpuSide[2] == true then
+					controllingPlayer = 2
+					updateForNewPlayer()
+				else
+					controllingPlayer = 2
+					updateForNewPlayer()
+				end
+			end
+			--If CPU case
+		end
+		
+		
+		
+		
+		
+		if slideTimeSide[1] > 0 then
+			slideTimeSide[1] = slideTimeSide[1] - 1
+			newDrawList = start.newUpdateDrawList()
+		end
+		batchDraw(newDrawList)
+		cursorsToDraw = 1
+		if main.selectMenu[2] or main.cpuSide[2] == false then
+			cursorsToDraw = cursorsToDraw * 2
+		end
+		if main.coop then
+			cursorsToDraw = cursorsToDraw * 2
+			if main.cpuSide[2] == true then
+				cursorsToDraw = start.p[1].numChars
+			end
+		end
+		
+		
+		
+		
+		for side = 1, cursorsToDraw do
+			BottomLine = (topLine + motif.select_info.rows - 1) % #start.t_grid
+			if start.c[side].selY >= topLine and  start.c[side].selY < topLine + motif.select_info.rows then
+				start.f_drawNewCursor(side, start.c[side].selX, (start.c[side].selY - topLine) + 1, 'active', false)
+			elseif ((BottomLine < motif.select_info.rows - 1) and start.c[side].selY <= BottomLine) and topLine > BottomLine then
+				start.f_drawNewCursor(side, start.c[side].selX, start.c[side].selY + (motif.select_info.rows - BottomLine), 'active', false)				
+			end
+		end
+	end
+end)
+
+
+
+--draw cursor
+function start.f_drawCursor(pn, x, y, param, done)
+	
+end
+
+--draw cursor
+function start.f_drawNewCursor(pn, x, y, param, done)
+	local pData = start.f_getCursorData(pn)
+	-- calculate target cell coordinates using the pre-calculated grid
+	local cellData = start.t_grid[y] and start.t_grid[y][x + 1]
+	local baseX, baseY
+	if cellData then
+		-- cellData already includes all spacing and offsets
+		baseX = motif.select_info.pos[1] + cellData.x
+		baseY = motif.select_info.pos[2] + cellData.y
+	end
+	cd = {}
+	-- draw
+	local params = pData.cursor[param].default
+	local key = x .. '-' .. y
+	if pData.cursor[param][key] ~= nil then
+		params = pData.cursor[param][key]
+	end
+	local a = params.AnimData
+	animSetFacing(a, getCellFacing(params.facing, x, y))
+	local scale = getCellTransform(x, y - 1, "scale", params.scale)
+	animSetScale(a, scale[1], scale[2])
+	animSetXShear(a, getCellTransform(x, y - 1, "xshear", params.xshear))
+	animSetAngle(a, getCellTransform(x, y - 1, "angle", params.angle))
+	animSetXAngle(a, getCellTransform(x, y - 1, "xangle", params.xangle))
+	animSetYAngle(a, getCellTransform(x, y - 1, "yangle", params.yangle))
+	animSetProjection(a, getCellTransform(x, y - 1, "projection", params.projection))
+	animSetFocalLength(a, getCellTransform(x, y - 1, "focallength", params.focallength))
+	animUpdate(a)
+	main.f_animPosDraw(a, baseX, baseY, getCellFacing(params.facing, x, y))
 end
 
 --returns correct cell position after moving the cursor
@@ -43,672 +232,148 @@ function start.f_cellMovement(selX, selY, cmd, side, snd, dir)
 	local tmpX = selX
 	local tmpY = selY
 	local found = false
-	if multiplayer and motif.select_info['p1_pos'] ~= nil then
-		if (cmd == teammate[side]) or not main.coop then
-			if main.f_input({cmd}, {'$U'}) or dir == 'U' then
-				for i = 1, #start.t_grid do
-					selY = selY - 1
-					if selY < 0 then
-						if motif.select_info.wrapping == 1 or dir ~= nil then
-							selY = #start.t_grid - 1
-						else
-							selY = tmpY
-						end
-					end
-					if currentRow[side] == 0 then
-						if shownTopRow[side] ~= 1 then
-							shownTopRow[side] = shownTopRow[side] - 1
-						else
-							if motif.select_info.wrapping == 1 then
-								shownTopRow[side] = #start.t_grid - motif.select_info.rows
-								currentRow[side] = motif.select_info.rows
-							end
-						end
-						remainingTime[side] = motif.select_info['cell_slide']
-						slideDir[side] = -1
+	if getInput(cmd, motif.select_info.cell.up.key) or dir == 'U' then
+		for i = 1, motif.select_info.rows do
+			selY = selY - 1
+			if selY < 0 then
+				selY = #start.t_grid - 1
+			end
+			print(topLine)
+			print(selY)
+			if (topLine == selY + 1 or selY == #start.t_grid - 1) and (cmd == controllingPlayer or main.cpuSide[2]) then
+				topLine = topLine - 1
+				if topLine < 0 then
+					topLine = topLine % #start.t_grid
+				end
+				slideTimeSide[1] = slideTimeStart
+				slideDirection[1] = -1
+			end
+			if dir ~= nil then
+				found, selX = start.f_searchEmptyBoxes(selX, selY, side, -1)
+			elseif (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
+				break
+			elseif motif.select_info.searchemptyboxesup then
+				found, selX = start.f_searchEmptyBoxes(selX, selY, side, 1)
+			end
+			if found then
+				break
+			end
+		end
+	elseif getInput(cmd, motif.select_info.cell.down.key) or dir == 'D' then
+		for i = 1, #start.t_grid do
+			selY = selY + 1
+			if selY >= #start.t_grid then
+				selY = 0
+			end
+			if (topLine + motif.select_info.rows) % #start.t_grid == selY and  (cmd == controllingPlayer or main.cpuSide[2]) then
+				topLine = topLine + 1
+				if topLine > #start.t_grid - 1 then
+					topLine = topLine % #start.t_grid
+				end
+				slideTimeSide[1] = slideTimeStart
+				slideDirection[1] = 1
+			end
+			if dir ~= nil then
+				found, selX = start.f_searchEmptyBoxes(selX, selY, side, 1)
+			elseif (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
+				break
+			elseif motif.select_info.searchemptyboxesdown then
+				found, selX = start.f_searchEmptyBoxes(selX, selY, side, 1)
+			end
+			if found then
+				break
+			end
+		end
+	elseif getInput(cmd, motif.select_info.cell.left.key) or dir == 'B' then
+		if dir ~= nil then
+			found, selX = start.f_searchEmptyBoxes(selX, selY, side, -1)
+		else
+			for i = 1, motif.select_info.columns do
+				selX = selX - 1
+				if selX < 0 then
+					if motif.select_info.wrapping then
+						selX = motif.select_info.columns - 1
 					else
-						currentRow[side] = currentRow[side] - 1
-					end
-					if dir ~= nil then
-						found, selX = start.f_searchEmptyBoxes(selX, selY, side, -1)
-					elseif (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes == 1) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
-						break
-					elseif motif.select_info.searchemptyboxesup ~= 0 then
-						found, selX = start.f_searchEmptyBoxes(selX, selY, side, motif.select_info.searchemptyboxesup)
-					end
-					if found then
-						break
+						selX = tmpX
 					end
 				end
-			elseif main.f_input({cmd}, {'$D'}) or dir == 'D' then
-				for i = 1, #start.t_grid do
-					if currentRow[side] == motif.select_info.rows - 1 then
-						if currentRow[side] + shownTopRow[side] ~= #start.t_grid then
-							shownTopRow[side] = shownTopRow[side] + 1
-						else
-							if motif.select_info.wrapping == 1 then
-								shownTopRow[side] = 1
-								currentRow[side] = 0
-							end
-						end
-						remainingTime[side] = motif.select_info['cell_slide']
-						slideDir[side] = 1
-					else
-						currentRow[side] = currentRow[side] + 1
-					end
-					selY = selY + 1
-					if selY >= #start.t_grid then
-						if motif.select_info.wrapping == 1 or dir ~= nil then
-							selY = 0
-						else
-							selY = tmpY
-						end
-					end		
-					if dir ~= nil then
-						found, selX = start.f_searchEmptyBoxes(selX, selY, side, 1)
-					elseif (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes == 1) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
-						break
-					elseif motif.select_info.searchemptyboxesdown ~= 0 then
-						found, selX = start.f_searchEmptyBoxes(selX, selY, side, motif.select_info.searchemptyboxesdown)
-					end
-					if found then
-						break
-					end
-				end
-			elseif main.f_input({cmd}, {'$B'}) or dir == 'B' then
-				if dir ~= nil then
-					found, selX = start.f_searchEmptyBoxes(selX, selY, side, -1)
-				else
-					for i = 1, motif.select_info.columns do
-						selX = selX - 1
-						if selX < 0 then
-							if motif.select_info.wrapping == 1 then
-								selX = motif.select_info.columns - 1
-							else
-								selX = tmpX
-							end
-						end
-						if (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes == 1) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
-							break
-						end
-					end
-				end
-			elseif main.f_input({cmd}, {'$F'}) or dir == 'F' then
-				if dir ~= nil then
-					found, selX = start.f_searchEmptyBoxes(selX, selY, side, 1)
-				else
-					for i = 1, motif.select_info.columns do
-						selX = selX + 1
-						if selX >= motif.select_info.columns then
-							if motif.select_info.wrapping == 1 then
-								selX = 0
-							else
-								selX = tmpX
-							end
-						end
-						if (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes == 1) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
-							break
-						end
-					end
+				if (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
+					break
 				end
 			end
 		end
-		if (tmpX ~= selX or tmpY ~= selY) then
-			if dir == nil then
-				sndPlay(motif.files.snd_data, snd[1], snd[2])
-				start.needUpdateDrawList = true
-			end
-		end
-	else
-		if (cmd == teammate[side]) or not main.coop then
-			if main.f_input({cmd}, {'$U'}) or dir == 'U' then
-				for i = 1, #start.t_grid do
-					selY = selY - 1
-					if selY < 0 then
-						if motif.select_info.wrapping == 1 or dir ~= nil then
-							selY = #start.t_grid - 1
-						else
-							selY = tmpY
-						end
-					end
-					if currentRow[side] == 0 then
-						if controllingPlayer == side then
-							if shownTopRow[1] ~= 1 then
-								shownTopRow[1] = shownTopRow[1] - 1
-							else
-								if motif.select_info.wrapping == 1 then
-									shownTopRow[1] = #start.t_grid - motif.select_info.rows
-									currentRow[side] = motif.select_info.rows
-								end
-							end
-						remainingTime[1] = motif.select_info['cell_slide']
-						slideDir[1] = -1
-						end
+		displayX = selX
+	elseif getInput(cmd, motif.select_info.cell.right.key) or dir == 'F' then
+		if dir ~= nil then
+			found, selX = start.f_searchEmptyBoxes(selX, selY, side, 1)
+		else
+			for i = 1, motif.select_info.columns do
+				selX = selX + 1
+				if selX >= motif.select_info.columns then
+					if motif.select_info.wrapping then
+						selX = 0
 					else
-						currentRow[side] = currentRow[side] - 1
-					end
-					if dir ~= nil then
-						found, selX = start.f_searchEmptyBoxes(selX, selY, side, -1)
-					elseif (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes == 1) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
-						break
-					elseif motif.select_info.searchemptyboxesup ~= 0 then
-						found, selX = start.f_searchEmptyBoxes(selX, selY, side, motif.select_info.searchemptyboxesup)
-					end
-					if found then
-						break
+						selX = tmpX
 					end
 				end
-			elseif main.f_input({cmd}, {'$D'}) or dir == 'D' then
-				for i = 1, #start.t_grid do
-					if currentRow[side] == motif.select_info.rows - 1 then
-						if controllingPlayer == side then
-							if currentRow[side] + shownTopRow[1] ~= #start.t_grid then
-								shownTopRow[1] = shownTopRow[1] + 1
-							else
-								if motif.select_info.wrapping == 1 then
-									shownTopRow[1] = 1
-									currentRow[side] = 0
-								end
-							end
-						remainingTime[1] = motif.select_info['cell_slide']
-						slideDir[1] = 1
-						end
-					else
-						currentRow[side] = currentRow[side] + 1
-					end
-					selY = selY + 1
-					if selY >= #start.t_grid then
-						if motif.select_info.wrapping == 1 or dir ~= nil then
-							selY = 0
-						else
-							selY = tmpY
-						end
-					end		
-					if dir ~= nil then
-						found, selX = start.f_searchEmptyBoxes(selX, selY, side, 1)
-					elseif (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes == 1) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
-						break
-					elseif motif.select_info.searchemptyboxesdown ~= 0 then
-						found, selX = start.f_searchEmptyBoxes(selX, selY, side, motif.select_info.searchemptyboxesdown)
-					end
-					if found then
-						break
-					end
-				end
-			elseif main.f_input({cmd}, {'$B'}) or dir == 'B' then
-				if dir ~= nil then
-					found, selX = start.f_searchEmptyBoxes(selX, selY, side, -1)
-				else
-					for i = 1, motif.select_info.columns do
-						selX = selX - 1
-						if selX < 0 then
-							if motif.select_info.wrapping == 1 then
-								selX = motif.select_info.columns - 1
-							else
-								selX = tmpX
-							end
-						end
-						if (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes == 1) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
-							break
-						end
-					end
-				end
-			elseif main.f_input({cmd}, {'$F'}) or dir == 'F' then
-				if dir ~= nil then
-					found, selX = start.f_searchEmptyBoxes(selX, selY, side, 1)
-				else
-					for i = 1, motif.select_info.columns do
-						selX = selX + 1
-						if selX >= motif.select_info.columns then
-							if motif.select_info.wrapping == 1 then
-								selX = 0
-							else
-								selX = tmpX
-							end
-						end
-						if (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes == 1) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
-							break
-						end
-					end
+				if (start.t_grid[selY + 1][selX + 1].char ~= nil or motif.select_info.moveoveremptyboxes) and start.t_grid[selY + 1][selX + 1].skip ~= 1 and (gameOption('Options.Team.Duplicates') or start.t_grid[selY + 1][selX + 1].char == 'randomselect' or not t_reservedChars[side][start.t_grid[selY + 1][selX + 1].char_ref]) and start.t_grid[selY + 1][selX + 1].hidden ~= 2 then
+					break
 				end
 			end
 		end
-		if (tmpX ~= selX or tmpY ~= selY) then
-			if dir == nil then
-				sndPlay(motif.files.snd_data, snd[1], snd[2])
-			end
+		displayX = selX
+	end
+	if (tmpX ~= selX or tmpY ~= selY) then
+		if dir == nil then
+			sndPlay(motif.Snd, snd[1], snd[2])
 		end
 	end
-	start.needUpdateDrawList = true
 	return selX, selY
 end
 
 
-function start.updateDrawList()
-	local drawList = {}
-	multiplayer = not main.cpuSide[2]
-	if multiplayer and motif.select_info['p1_pos'] ~= nil then
-		for side = 1, 2 do
-			if main.coop then
-				if teammate[side] ~= (#start.p[side].t_selected * 2 + side) and teammate[side] ~= 0 then
-					start.c[teammate[side] + 2].selX = start.c[teammate[side]].selX
-					start.c[teammate[side] + 2].selY = start.c[teammate[side]].selY
-					teammate[side] = (teammate[side] + 2) or side
-				end
-			end
-			for row = 1, motif.select_info.rows do
-				for col = 1, motif.select_info.columns do
-					local cellIndex = (shownTopRow[side] + row - 2) * motif.select_info.columns + col
-					local t = start.t_grid[row][col]
 
-					if t.skip ~= 1 then
-						local charData = start.f_selGrid(cellIndex)
 
-						if (charData and charData.char ~= nil and (charData.hidden == 0 or charData.hidden == 3)) or motif.select_info.showemptyboxes == 1 then
-							table.insert(drawList, {
-								anim = motif.select_info.cell_bg_data,
-								x = motif.select_info['p' .. side .. '_pos'][1] + t.x,
-								y = motif.select_info['p' .. side .. '_pos'][2] + ((row - 1) * (motif.select_info['cell_spacing'][2] + motif.select_info['cell_size'][2])) + (slideDir[side] * ((remainingTime[side] / motif.select_info['cell_slide']) * (motif.select_info['cell_size'][2] + motif.select_info['cell_spacing'][2]))),
-								facing = motif.select_info['cell_' .. col .. '_' .. row .. '_facing'] or motif.select_info.cell_bg_facing or 1
-							})
-						end
 
-						if charData and (charData.char == 'randomselect' or charData.hidden == 3) then
-							table.insert(drawList, {
-								anim = motif.select_info.cell_random_data,
-								x = motif.select_info['p' .. side .. '_pos'][1] + t.x + motif.select_info.portrait_offset[1],
-								y = motif.select_info['p' .. side .. '_pos'][2] + t.y + motif.select_info.portrait_offset[2] + (slideDir[side] * ((remainingTime[side] / motif.select_info['cell_slide']) * (motif.select_info['cell_size'][2] + motif.select_info['cell_spacing'][2]))),
-								facing = motif.select_info['cell_' .. col .. '_' .. row .. '_facing'] or motif.select_info.cell_random_facing or 1
-							})
-						end
-						
-						if charData and charData.char_ref ~= nil and charData.hidden == 0 then
-							table.insert(drawList, {
-								anim = charData.cell_data,
-								x = motif.select_info['p' .. side .. '_pos'][1] + t.x + motif.select_info.portrait_offset[1],
-								y = motif.select_info['p' .. side .. '_pos'][2] + t.y + motif.select_info.portrait_offset[2] + (slideDir[side] * ((remainingTime[side] / motif.select_info['cell_slide']) * (motif.select_info['cell_size'][2] + motif.select_info['cell_spacing'][2]))),
-								facing = motif.select_info['cell_' .. col .. '_' .. row .. '_facing'] or motif.select_info.portrait_facing or 1
-							})
-						end
-					end
-				end
-			end
-		end
-	else
-		if not main.coop then
-			for member = 1, start.p[1].numChars or 4 do
-				if start.p[1].t_selected[start.p[1].numChars] == nil then
-					swapOccured = false
-					controllingPlayer = 1
-					if teammate[1] ~= #start.p[1].t_selected + 1 then
-						teammate[1] = #start.p[1].t_selected + 1
-					end
-					break
-				else
-					if swapOccured then
-					
-					else
-						if multiplayer then
-							if start.c[2].selY < shownTopRow[1] then
-								shownTopRow[1] = start.c[2].selY + 1
-								currentRow[2] = 0
-							
-							elseif start.c[2].selY > shownTopRow[1] + motif.select_info.rows - 2 then
-								shownTopRow[1] = start.c[2].selY + 1
-								currentRow[2] = 0
-								if #start.t_grid - start.c[2].selY <= motif.select_info.rows then
-									currentRow[2] = motif.select_info.rows - (#start.t_grid - start.c[2].selY - 1)
-									shownTopRow[1] = #start.t_grid - motif.select_info.rows
-								end
-							else
-								currentRow[2] = start.c[2].selY - shownTopRow[1] + 1
-							end
-							controllingPlayer = 2
-							swapOccured = true
-						else
-							if start.c[2].selY < shownTopRow[1] then
-								shownTopRow[1] = start.c[2].selY + 1
-								currentRow[1] = 0
-							
-							elseif start.c[1].selY > shownTopRow[1] + motif.select_info.rows - 2 then
-								shownTopRow[1] = start.c[2].selY + 1
-								currentRow[1] = 0
-								if #start.t_grid - start.c[2].selY <= motif.select_info.rows then
-									currentRow[1] = motif.select_info.rows - (#start.t_grid - start.c[2].selY - 1)
-									shownTopRow[1] = #start.t_grid - motif.select_info.rows
-								end
-							else
-								currentRow[2] = start.c[2].selY - shownTopRow[1] + 1
-							end
-							swapOccured = true
-						end
-					end
-				end
-			end
-		end
-		if main.coop then
-			if not multiplayer then
-				if start.c[teammate[1]].selY < shownTopRow[1] then
-					shownTopRow[1] = start.c[teammate[1]].selY + 1
-					currentRow[1] = 0
-				
-				elseif start.c[1].selY > shownTopRow[1] + motif.select_info.rows - 2 then
-					shownTopRow[1] = start.c[teammate[1]].selY + 1
-					currentRow[1] = 0
-					if #start.t_grid - start.c[teammate[1]].selY <= motif.select_info.rows then
-						currentRow[1] = motif.select_info.rows - (#start.t_grid - start.c[teammate[1]].selY - 1)
-						shownTopRow[1] = #start.t_grid - motif.select_info.rows
-					end
-				else
-					currentRow[teammate[1]] = start.c[teammate[1]].selY - shownTopRow[1] + 1
-				end
-				
-				if teammate[1] ~= (#start.p[1].t_selected + 1) and #start.p[1].t_selected ~= 0 then
-					start.c[#start.p[1].t_selected + 1].selX = start.c[#start.p[1].t_selected].selX
-					start.c[#start.p[1].t_selected + 1].selY = start.c[#start.p[1].t_selected].selY
-				end
-				teammate[1] = (#start.p[1].t_selected + 1) or 1
-			else
-				side = 1
-				if #start.p[1].t_selected == start.p[1].numChars then
-					side = 2
-					controllingPlayer = 2
-				else
-					swapOccured = false
-				end
-				if side == 2 and not swapOccured then
-					if start.c[teammate[side]].selY < shownTopRow[1] then
-						shownTopRow[1] = start.c[teammate[side]].selY + 1
-						currentRow[side] = 0
-					
-					elseif start.c[1].selY > shownTopRow[1] + motif.select_info.rows - 2 then
-						shownTopRow[1] = start.c[teammate[side]].selY + 1
-						currentRow[side] = 0
-						if #start.t_grid - start.c[teammate[side]].selY <= motif.select_info.rows then
-							currentRow[side] = motif.select_info.rows - (#start.t_grid - start.c[teammate[side]].selY - 1)
-							shownTopRow[1] = #start.t_grid - motif.select_info.rows
-						end
-					else
-						currentRow[side] = start.c[teammate[side]].selY - shownTopRow[1] + 1
-					end
-					swapOccured = true
-				end
-				if teammate[side] ~= (#start.p[side].t_selected * 2 + side) and teammate[side] ~= 0 then
-					start.c[teammate[side] + 2].selX = start.c[teammate[side]].selX
-					start.c[teammate[side] + 2].selY = start.c[teammate[side]].selY
-					teammate[side] = (teammate[side] + 2) or side
-				end
-			end
-		end
-		for row = 1, motif.select_info.rows do
-			for col = 1, motif.select_info.columns do
-				local cellIndex = (shownTopRow[1] + row - 2) * motif.select_info.columns + col
-				local t = start.t_grid[row][col]
 
-				if t.skip ~= 1 then
-					local charData = start.f_selGrid(cellIndex)
-
-					if (charData and charData.char ~= nil and (charData.hidden == 0 or charData.hidden == 3)) or motif.select_info.showemptyboxes == 1 then
-						table.insert(drawList, {
-							anim = motif.select_info.cell_bg_data,
-							x = motif.select_info.pos[1] + t.x,
-							y = motif.select_info.pos[2] + ((row - 1) * (motif.select_info['cell_spacing'][2] + motif.select_info['cell_size'][2])) + (slideDir[1] * ((remainingTime[1] / motif.select_info['cell_slide']) * (motif.select_info['cell_size'][2] + motif.select_info['cell_spacing'][2]))),
-							facing = motif.select_info['cell_' .. col .. '_' .. row .. '_facing'] or motif.select_info.cell_bg_facing or 1
-						})
-					end
-
-					if charData and (charData.char == 'randomselect' or charData.hidden == 3) then
-						table.insert(drawList, {
-							anim = motif.select_info.cell_random_data,
-							x = motif.select_info.pos[1] + t.x + motif.select_info.portrait_offset[1],
-							y = motif.select_info.pos[2] + t.y + motif.select_info.portrait_offset[2] + (slideDir[1] * ((remainingTime[1] / motif.select_info['cell_slide']) * (motif.select_info['cell_size'][2] + motif.select_info['cell_spacing'][2]))),
-							facing = motif.select_info['cell_' .. col .. '_' .. row .. '_facing'] or motif.select_info.cell_random_facing or 1
-						})
-					end
-					
-					if charData and charData.char_ref ~= nil and charData.hidden == 0 then
-						table.insert(drawList, {
-							anim = charData.cell_data,
-							x = motif.select_info.pos[1] + t.x + motif.select_info.portrait_offset[1],
-							y = motif.select_info.pos[2] + t.y + motif.select_info.portrait_offset[2] + (slideDir[1] * ((remainingTime[1] / motif.select_info['cell_slide']) * (motif.select_info['cell_size'][2] + motif.select_info['cell_spacing'][2]))),
-							facing = motif.select_info['cell_' .. col .. '_' .. row .. '_facing'] or motif.select_info.portrait_facing or 1
-						})
-					end
-				end
-			end
+local cnt = motif.select_info.columns + 1
+local row = 1
+local col = 0
+start.t_grid = {[row] = {}}
+for i = 1, #main.t_selGrid do
+	if i == cnt then
+		row = row + 1
+		cnt = cnt + motif.select_info.columns
+		start.t_grid[row] = {}
+	end
+	col = #start.t_grid[row] + 1
+	local cell_spacing = getCellSpacing(col - 1, row - 1)
+	local cell_offset = getCellOffset(col - 1, row - 1)
+	start.t_grid[row][col] = {
+		x = (col - 1) * (motif.select_info.cell.size[1] + cell_spacing[1]) + cell_offset[1],
+		y = (row - 1) * (motif.select_info.cell.size[2] + cell_spacing[2]) + cell_offset[2]
+	}
+	if start.f_selGrid(i).char ~= nil then
+		start.t_grid[row][col].char = start.f_selGrid(i).char
+		start.t_grid[row][col].char_ref = start.f_selGrid(i).char_ref
+		start.t_grid[row][col].hidden = start.f_selGrid(i).hidden
+		for j = 1, #main.t_selGrid[i].chars do
+			start.f_selGrid(i, j).row = row
+			start.f_selGrid(i, j).col = col
 		end
 	end
-
-	return drawList
+	local overrideSkip = getCellSkip(col - 1, row - 1)
+	if start.f_selGrid(i).skip == 1 or overrideSkip then
+		start.t_grid[row][col].skip = 1
+	end
 end
-
---calculate cursor.tween
-local function f_cursorTween(val, target, factor)
-	if not factor or not target then
-		return val
-	end
-	for i = 1, 2 do
-		local t = target[i] or 0
-		local f = math.min(math.abs(factor[i] or 0.5), 1)
-		val[i] = val[i] + (t - val[i]) * f
-	end
-	return val
-end
-
---draw cursor
-function start.f_drawCursor(pn, x, y, param, done)
-	if multiplayer and motif.select_info['p1_pos'] ~= nil then
-		if pn == teammate[(pn - 1) % 2 + 1] then
-			-- in non-coop modes only p1 and p2 cursors are used
-			pn = (pn - 1) % 2 + 1
-			local prefix = 'p' .. pn .. param .. '_' .. x + 1 .. '_' .. currentRow[pn] + 1
-			-- create spr/anim data, if not existing yet
-			if y < (motif.select_info.rows + shownTopRow[pn]) - 1 and y >= shownTopRow[pn] - 1 then
-				if motif.select_info[prefix .. '_data'] == nil then
-					-- if cell based variants are not defined we're defaulting to standard pX parameters
-					for _, v in ipairs({'_anim', '_spr', '_offset', '_scale', '_facing'}) do
-						if motif.select_info[prefix .. v] == nil then
-							motif.select_info[prefix .. v] = start.f_getCursorData(pn, param .. v)
-						end
-					end
-					motif.f_loadSprData(motif.select_info, {s = prefix .. '_'})
-				end
-
-				-- select appropriate cursor table and initialize if needed
-				local store = done and cursorDone or cursorActive
-				if store[pn] == nil then
-					store[pn] = {
-						currentPos = {0, 0},
-						targetPos  = {0, 0},
-						startPos   = {0, 0},
-						slideOffset= {0, 0},
-						init       = false,
-						snap       = false -- only used by active cursors
-					}
-				end
-				local cd = store[pn]
-
-				-- calculate target cell coordinates
-				local baseX = motif.select_info['p' .. pn .. '_pos'][1] + x * (motif.select_info.cell_size[1] + motif.select_info.cell_spacing[1]) + start.f_faceOffset(x + 1, currentRow[pn] + 1, 1)
-				local baseY = motif.select_info['p' .. pn .. '_pos'][2] + (y - shownTopRow[pn] + 1) * (motif.select_info.cell_size[2] + motif.select_info.cell_spacing[2]) + start.f_faceOffset(x + 1, (y - shownTopRow[pn]) + 1, 2)
-
-				-- initialization or snap: set cursor directly
-				if not cd.init or done or cd.snap then
-					for i = 1, 2 do
-						cd.currentPos[i] = (i == 1) and baseX or baseY
-						cd.targetPos[i]  = cd.currentPos[i]
-						cd.startPos[i]   = cd.currentPos[i]
-						cd.slideOffset[i]= 0
-					end
-					cd.init, cd.snap = true, false
-				-- new cell selected: recalc tween offsets
-				elseif cd.targetPos[1] ~= baseX or cd.targetPos[2] ~= baseY then
-					cd.startPos[1], cd.startPos[2] = cd.currentPos[1], cd.currentPos[2]
-					cd.targetPos[1], cd.targetPos[2] = baseX, baseY
-					cd.slideOffset[1] = cd.startPos[1] - baseX
-					cd.slideOffset[2] = cd.startPos[2] - baseY
-				end
-				local t_factor = { -- we also remap pn to p1/p2 to avoid crashes in vs coop when motif lacks other players tween data
-					motif.select_info['p' .. 2-pn%2 .. '_cursor_tween_factor'][1],
-					motif.select_info['p' .. 2-pn%2 .. '_cursor_tween_factor'][2]
-				}
-				-- apply tween if enabled, otherwise snap to target
-				if not done and t_factor[1] > 0 and t_factor[2] > 0 then
-					f_cursorTween(cd.slideOffset, {0, 0}, t_factor)
-				else
-					cd.slideOffset[1], cd.slideOffset[2] = 0, 0
-				end
-
-				if motif.select_info['p' .. pn .. '_cursor_tween_wrap_snap'] == 1 then
-					local dx = cd.targetPos[1] - cd.startPos[1]
-					local dy = cd.targetPos[2] - cd.startPos[2]
-					if math.abs(dx) > motif.select_info.cell_size[1] * (motif.select_info.columns - 1) or math.abs(dy) > motif.select_info.cell_size[2] * (motif.select_info.rows - 1) then
-					cd.slideOffset[1], cd.slideOffset[2] = 0, 0	
-					end
-				end
-				-- update final cursor position
-				cd.currentPos[1] = cd.targetPos[1] + cd.slideOffset[1]
-				cd.currentPos[2] = cd.targetPos[2] + cd.slideOffset[2]
-
-				-- draw
-				main.f_animPosDraw(
-					motif.select_info[prefix .. '_data'],
-					cd.currentPos[1],
-					cd.currentPos[2],
-					(motif.select_info['cell_' .. x + 1 .. '_' .. currentRow[pn] + 1 .. '_facing'] or motif.select_info['p' .. pn .. param .. '_facing'])
-				)
-			end
-			if remainingTime[pn] ~= 0 then
-				remainingTime[pn] = remainingTime[pn] - 1
-			end
-		end
-	else
-		-- in non-coop modes only p1 and p2 cursors are used
-		if pn == teammate[(pn - 1) % 2 + 1] then
-			pn = (pn - 1) % 2 + 1
-			local prefix = 'p' .. pn .. param .. '_' .. x + 1 .. '_' .. currentRow[pn] + 1
-			-- create spr/anim data, if not existing yet
-			if y < (motif.select_info.rows + shownTopRow[1]) - 1 and y >= shownTopRow[1] - 1 then
-				if motif.select_info[prefix .. '_data'] == nil then
-					-- if cell based variants are not defined we're defaulting to standard pX parameters
-					for _, v in ipairs({'_anim', '_spr', '_offset', '_scale', '_facing'}) do
-						if motif.select_info[prefix .. v] == nil then
-							motif.select_info[prefix .. v] = start.f_getCursorData(pn, param .. v)
-						end
-					end
-					motif.f_loadSprData(motif.select_info, {s = prefix .. '_'})
-				end
-
-				-- select appropriate cursor table and initialize if needed
-				local store = done and cursorDone or cursorActive
-				if store[pn] == nil then
-					store[pn] = {
-						currentPos = {0, 0},
-						targetPos  = {0, 0},
-						startPos   = {0, 0},
-						slideOffset= {0, 0},
-						init       = false,
-						snap       = false -- only used by active cursors
-					}
-				end
-				local cd = store[pn]
-
-				-- calculate target cell coordinates
-				local baseX = motif.select_info.pos[1] + x * (motif.select_info.cell_size[1] + motif.select_info.cell_spacing[1]) + start.f_faceOffset(x + 1, currentRow[pn] + 1, 1)
-				local baseY = motif.select_info.pos[2] + (y - shownTopRow[1] + 1) * (motif.select_info.cell_size[2] + motif.select_info.cell_spacing[2]) + start.f_faceOffset(x + 1, (y - shownTopRow[1]) + 1, 2)
-
-				-- initialization or snap: set cursor directly
-				if not cd.init or done or cd.snap then
-					for i = 1, 2 do
-						cd.currentPos[i] = (i == 1) and baseX or baseY
-						cd.targetPos[i]  = cd.currentPos[i]
-						cd.startPos[i]   = cd.currentPos[i]
-						cd.slideOffset[i]= 0
-					end
-					cd.init, cd.snap = true, false
-				-- new cell selected: recalc tween offsets
-				elseif cd.targetPos[1] ~= baseX or cd.targetPos[2] ~= baseY then
-					cd.startPos[1], cd.startPos[2] = cd.currentPos[1], cd.currentPos[2]
-					cd.targetPos[1], cd.targetPos[2] = baseX, baseY
-					cd.slideOffset[1] = cd.startPos[1] - baseX
-					cd.slideOffset[2] = cd.startPos[2] - baseY
-				end
-				local t_factor = { -- we also remap pn to p1/p2 to avoid crashes in vs coop when motif lacks other players tween data
-					motif.select_info['p' .. 2-pn%2 .. '_cursor_tween_factor'][1],
-					motif.select_info['p' .. 2-pn%2 .. '_cursor_tween_factor'][2]
-				}
-				-- apply tween if enabled, otherwise snap to target
-				if not done and t_factor[1] > 0 and t_factor[2] > 0 then
-					f_cursorTween(cd.slideOffset, {0, 0}, t_factor)
-				else
-					cd.slideOffset[1], cd.slideOffset[2] = 0, 0
-				end
-
-				if motif.select_info['p' .. pn .. '_cursor_tween_wrap_snap'] == 1 then
-					local dx = cd.targetPos[1] - cd.startPos[1]
-					local dy = cd.targetPos[2] - cd.startPos[2]
-					if math.abs(dx) > motif.select_info.cell_size[1] * (motif.select_info.columns - 1) or math.abs(dy) > motif.select_info.cell_size[2] * (motif.select_info.rows - 1) then
-					cd.slideOffset[1], cd.slideOffset[2] = 0, 0	
-					end
-				end
-				-- update final cursor position
-				cd.currentPos[1] = cd.targetPos[1] + cd.slideOffset[1]
-				cd.currentPos[2] = cd.targetPos[2] + cd.slideOffset[2]
-
-				-- draw
-				main.f_animPosDraw(
-					motif.select_info[prefix .. '_data'],
-					cd.currentPos[1],
-					cd.currentPos[2],
-					(motif.select_info['cell_' .. x + 1 .. '_' .. currentRow[pn] + 1 .. '_facing'] or motif.select_info['p' .. pn .. param .. '_facing'])
-				)
-			end
-		end
-		if remainingTime[1] ~= 0 then
-			remainingTime[1] = remainingTime[1] - 1
-		end
+for i = 1, motif.select_info.rows do
+	if start.t_grid[#start.t_grid][i] == nil then
+		start.t_grid[#start.t_grid][i] = {}
+		start.t_grid[row][i].char = "randomselect"
+		start.t_grid[row][i].char_ref = 0
+		start.t_grid[row][i].hidden = 2
 	end
 end
 
---returns player cursor data
-function start.f_getCursorData(pn, suffix)
-	if suffix == '_cursor_startcell' then
-		currentRow = {0, 0}
-		shownTopRow = {1, 1}
-		teammate = {1, 2}
-	end
-	if main.coop and motif.select_info['p' .. pn .. suffix] ~= nil then
-		return motif.select_info['p' .. pn .. suffix]
-	end
-	return motif.select_info['p' .. (pn - 1) % 2 + 1 .. suffix]
-end
-
---loading loop called after versus screen is finished
-function start.f_selectLoading()
-	clearAllSound()
-	currentRow = {0, 0}
-	shownTopRow = {1, 1}
-	teammate = {1, 2}
-	for side = 1, 2 do
-		for member, v in ipairs(start.p[side].t_selected) do
-			if start.p[side] ~= nil and start.p[side].t_cursor and start.p[side].t_cursor[member] ~= nil then
-				start.p[side].t_cursor[member].x = 0
-				start.p[side].t_cursor[member].y = 0
-			end
-			if not v.loading then
-				selectChar(side, v.ref, v.pal)
-				v.loading = true
-			end
-		end
-	end
-	--TODO: fix gameOption('Config.BackgroundLoading') setting
-	--if not gameOption('Config.BackgroundLoading') then
-		loadStart()
-	--end
-	-- calling refresh() during netplay data loading can lead to synchronization error
-	--while motif.vs_screen.loading_data ~= nil and loading() and not network() do
-	--	animDraw(motif.vs_screen.loading_data)
-	--	animUpdate(motif.vs_screen.loading_data)
-	--	refresh()
-	--end
-end
+onePlayerMenuPos = motif.select_info.pos
