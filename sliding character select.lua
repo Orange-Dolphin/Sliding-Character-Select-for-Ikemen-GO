@@ -1,4 +1,3 @@
-
 topLine = 0
 slideTimeStart = 12
 slideTimeSide = {slideTimeStart, slideTimeStart}
@@ -12,6 +11,11 @@ function start.updateDrawList()
 	
 	return drawList
 end
+
+local function hasPortraitAnim(params)
+	return params ~= nil and params.AnimData ~= nil and ((params.anim or -1) ~= -1 or (params.spr ~= nil and params.spr[1] ~= -1))
+end
+
 function start.newUpdateDrawList()
 	local drawList = {}
 	--if main.cpuSide[2] == true then
@@ -54,14 +58,26 @@ function start.newUpdateDrawList()
 						item.y = motif.select_info.pos[2] + t.y + motif.select_info.portrait.offset[2] +(slideDirection[1] * (slideTimeSide[1] / slideTimeStart) * motif.select_info.cell.spacing[2])
 						table.insert(drawList, item)
 					end
-
-					if charData and charData.char_ref ~= nil and charData.hidden == 0 then
-						local item = getTransforms(motif.select_info.portrait)
-						item.anim = charData.cell_data
+					--[[
+					if charData and charData.char_ref ~= nil and charData.hidden == 0 and charData.char ~= 'randomselect' then
+						local portrait = motif.select_info.portrait
+						local loadingPortrait = false
+						if getCharPreloadStatus(charData.char_ref) ~= 'ready' and hasPortraitAnim(portrait.loading) then
+							portrait = portrait.loading
+							loadingPortrait = true
+						end
+						local item = getTransforms(portrait)
+						item.anim = loadingPortrait and portrait.AnimData or charData.cell_data
 						item.x = motif.select_info.pos[1] + t.x + motif.select_info.portrait.offset[1]
 						item.y = motif.select_info.pos[2] + t.y + motif.select_info.portrait.offset[2] + (slideDirection[1] * (slideTimeSide[1] / slideTimeStart) * motif.select_info.cell.spacing[2])
 						-- apply cell scale override while preserving portrait resolution factor
-						if item.scale ~= nil then
+						if not loadingPortrait then
+							item.x = item.x + portrait.offset[1]
+							item.y = item.y + portrait.offset[2]
+						end
+						-- apply cell scale override while preserving portrait resolution factor
+						-- loading portrait comes from system.sff, so don't apply character localcoord scaling to it
+						if item.scale ~= nil and not loadingPortrait then
 							local charInfo = main.t_selChars[charData.char_ref + 1]
 							if charInfo then
 								local portraitScale = charInfo.portraitscale or 1
@@ -75,6 +91,59 @@ function start.newUpdateDrawList()
 							end
 						end
 						table.insert(drawList, item)
+						local grid = main.t_selGrid[cellIndex]
+						local hasMultipleChars = grid ~= nil and #grid.chars > 1
+						-- draw slot indicator
+						if hasMultipleChars and hasPortraitAnim(motif.select_info.cell.slot) then
+							local icon = getTransforms(motif.select_info.cell.slot)
+							icon.anim = motif.select_info.cell.slot.AnimData
+							icon.x = motif.select_info.pos[1] + t.x
+							icon.y = motif.select_info.pos[2] + t.y
+							table.insert(drawList, icon)
+						end
+					end
+					]]--
+					if charData and charData.char_ref ~= nil and charData.hidden == 0 and charData.char ~= 'randomselect' then
+						local portrait = motif.select_info.portrait
+						local loadingPortrait = false
+						if getCharPreloadStatus(charData.char_ref) ~= 'ready' and hasPortraitAnim(portrait.loading) then
+							portrait = portrait.loading
+							loadingPortrait = true
+						end
+						local item = getTransforms(portrait)
+						item.anim = loadingPortrait and portrait.AnimData or charData.cell_data
+						item.x = motif.select_info.pos[1] + t.x
+						item.y = motif.select_info.pos[2] + t.y
+						if not loadingPortrait then
+							item.x = item.x + portrait.offset[1]
+							item.y = item.y + portrait.offset[2] +(slideDirection[1] * (slideTimeSide[1] / slideTimeStart) * motif.select_info.cell.spacing[2])
+						end
+						-- apply cell scale override while preserving portrait resolution factor
+						-- loading portrait comes from system.sff, so don't apply character localcoord scaling to it
+						if item.scale ~= nil and not loadingPortrait then
+							local charInfo = main.t_selChars[charData.char_ref + 1]
+							if charInfo then
+								local portraitScale = charInfo.portraitscale or 1
+								local charLocalcoord = charInfo.localcoord or motif.info.localcoord[1]
+								-- recompute resolution compensation factor
+								local resFix = portraitScale * motif.info.localcoord[1] / charLocalcoord
+								item.scale = {
+									item.scale[1] * resFix,
+									item.scale[2] * resFix
+								}
+							end
+						end
+						table.insert(drawList, item)
+						local grid = main.t_selGrid[cellIndex]
+						local hasMultipleChars = grid ~= nil and #grid.chars > 1
+						-- draw slot indicator
+						if hasMultipleChars and hasPortraitAnim(motif.select_info.cell.slot) then
+							local icon = getTransforms(motif.select_info.cell.slot)
+							icon.anim = motif.select_info.cell.slot.AnimData
+							icon.x = motif.select_info.pos[1] + t.x
+							icon.y = motif.select_info.pos[2] + t.y
+							table.insert(drawList, icon)
+						end
 					end
 				end
 			end
@@ -84,6 +153,11 @@ function start.newUpdateDrawList()
 end
 
 hook.add("start.f_selectScreen", "selectScreenDecider", function()
+	newDrawList = start.newUpdateDrawList()
+	cursorFinished = {}
+	for _, item in ipairs(newDrawList) do
+		animUpdate(item.anim)
+	end
 	local function updateForNewPlayer()
 		topLine = start.c[controllingPlayer].selY
 		newDrawList = start.newUpdateDrawList()
@@ -103,7 +177,6 @@ hook.add("start.f_selectScreen", "selectScreenDecider", function()
 			controllingPlayer = 1
 			updateForNewPlayer()
 		end
-		
 		if main.coop then
 			if main.cpuSide[2] == false then
 
@@ -174,15 +247,51 @@ hook.add("start.f_selectScreen", "selectScreenDecider", function()
 			end
 		end
 		
-		
-		
-		
-		for side = 1, cursorsToDraw do
+
+		for side = 1, 2 do
+			--for each player with active controls
+			for k, v in ipairs(start.p[side].t_selCmd) do
+				local member = main.f_tableLength(start.p[side].t_selected) + k
+				local activeMember = true
+				if main.coop and (side == 1 or gameMode('versuscoop')) then
+					member = k
+					if motif.select_info.coopqueue then
+						activeMember = (k == main.f_tableLength(start.p[side].t_selected) + 1)
+					end
+				end
+				--draw active cursor
+				if activeMember then
+					cursorFinished[v.player] = false
+					local cursorState = 'active'
+					if v.selectState > 0 and motif.select_info.paletteselect > 0 then
+						local cursorData = motif.select_info['p' .. side].cursor
+						if cursorData.preview and cursorData.preview.default and 
+						(cursorData.preview.default.anim ~= -1 or cursorData.preview.default.spr[1] ~= -1) then
+						--cursorState when palmenu is active
+							cursorState = 'preview'
+						else
+							cursorState = 'done'
+							cursorFinished[v.player] = true
+						end
+					end
+				
+				else
+				end
+				
+			end
+		end
+		for player = 1, cursorsToDraw do
+			cursorStateName = 'active'
+			print(cursorFinished[player])
+			if cursorFinished[player] == true then
+				cursorStateName = 'done'
+			end
+			
 			BottomLine = (topLine + motif.select_info.rows - 1) % #start.t_grid
-			if start.c[side].selY >= topLine and  start.c[side].selY < topLine + motif.select_info.rows then
-				start.f_drawNewCursor(side, start.c[side].selX, (start.c[side].selY - topLine) + 1, 'active', false)
-			elseif ((BottomLine < motif.select_info.rows - 1) and start.c[side].selY <= BottomLine) and topLine > BottomLine then
-				start.f_drawNewCursor(side, start.c[side].selX, start.c[side].selY + (motif.select_info.rows - BottomLine), 'active', false)				
+			if start.c[player].selY >= topLine and  start.c[player].selY < topLine + motif.select_info.rows then
+				start.f_drawNewCursor(player, start.c[player].selX, (start.c[player].selY - topLine) + 1, cursorStateName, false)
+			elseif ((BottomLine < motif.select_info.rows - 1) and start.c[player].selY <= BottomLine) and topLine > BottomLine then
+				start.f_drawNewCursor(player, start.c[player].selX, start.c[player].selY + (motif.select_info.rows - BottomLine), cursorStateName, false)				
 			end
 		end
 	end
@@ -240,7 +349,7 @@ function start.f_cellMovement(selX, selY, cmd, side, snd, dir)
 			end
 			print(topLine)
 			print(selY)
-			if (topLine == selY + 1 or selY == #start.t_grid - 1) and (cmd == controllingPlayer or main.cpuSide[2]) then
+			if (topLine == selY + 1 or (selY == #start.t_grid - 1 and topLine == 0)) and (cmd == controllingPlayer or main.cpuSide[2]) then
 				topLine = topLine - 1
 				if topLine < 0 then
 					topLine = topLine % #start.t_grid
@@ -322,6 +431,7 @@ function start.f_cellMovement(selX, selY, cmd, side, snd, dir)
 			end
 		end
 		displayX = selX
+		
 	end
 	if (tmpX ~= selX or tmpY ~= selY) then
 		if dir == nil then
@@ -367,7 +477,7 @@ for i = 1, #main.t_selGrid do
 		start.t_grid[row][col].skip = 1
 	end
 end
-for i = 1, motif.select_info.rows do
+for i = 1, motif.select_info.columns do
 	if start.t_grid[#start.t_grid][i] == nil then
 		start.t_grid[#start.t_grid][i] = {}
 		start.t_grid[row][i].char = "randomselect"
